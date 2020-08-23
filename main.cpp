@@ -2,6 +2,7 @@
 #include<iostream>
 #include <chrono>
 #include <thread>
+#include <vector>
 
 void CreateAssets();
 int Rotate(int pieceX, int pieceY, int degree);
@@ -50,15 +51,23 @@ int main()
 
 	int currentPiece = 0;
 	int currentRotation = 0;
-	int currentX = FieldWidth / 2;
+	int currentX = (FieldWidth / 2) - 2;
 	int currentY = 0;
 
 	bool rotateButtonHeld = false;
+
+	int gameSpeed = 20;
+	int speedCount = 0;
+	bool forceDown = false;
+	vector<int> lines;
+	int score = 0;
 
 	while (isRunning)
 	{
 		// Game Timing
 		this_thread::sleep_for(50ms);
+		speedCount++;
+		forceDown = (speedCount == gameSpeed);
 
 		// Input
 		for (size_t keyIndex = 0; keyIndex < 4; keyIndex++)
@@ -88,9 +97,59 @@ int main()
 			rotateButtonHeld = false;
 		}
 
+		if (forceDown)
+		{
+			if (DoesPieceIft(currentPiece, currentRotation, currentX, currentY + 1))
+				currentY++;
+			else
+			{
+				// Lock the current piece into the field,
+				for (size_t pieceX = 0; pieceX < 4; pieceX++)
+					for (size_t pieceY = 0; pieceY < 4; pieceY++)
+						if (Pieces[currentPiece][Rotate(pieceX, pieceY, currentRotation)] == L'X')
+							Field[(currentY + pieceY) * FieldWidth + (currentX + pieceX)] = currentPiece + 1;
+
+				// Check have we created full horizontal line
+				for (size_t pieceY = 0; pieceY < 4; pieceY++)
+					if (currentY + pieceY < FieldHeight - 1)
+					{
+						bool isLine = true;
+						for (size_t pieceX = 1; pieceX < FieldWidth - 1; pieceX++)
+							isLine &= (Field[(currentY + pieceY) * FieldWidth + pieceX]) != 0;
+
+						if (isLine)
+						{
+							// Set line to equal symbol
+							for (size_t pieceX = 0; pieceX < FieldWidth; pieceX++)
+								Field[(currentY + pieceY) * FieldWidth + pieceX] = 8;
+
+							lines.push_back(currentY + pieceY);
+						}
+					}
+
+				score += 25;
+
+				if ((!lines.empty()))
+					score += (1 << lines.size()) * 100;
+
+				// choose the next piece
+				currentPiece = 0;
+				currentRotation = 0;
+				currentX = FieldWidth / 2;
+				currentY = 0;
+				currentPiece = rand() % 7;
+
+				// If we cant fit next piece then its game over
+				isRunning = DoesPieceIft(currentPiece, currentRotation, currentX, currentY);
+			}
+
+			speedCount = 0;
+		}
+
 		// Draw Field
 		DrawField(screen);
 
+		// Draw current piece
 		for (size_t pieceX = 0; pieceX < 4; pieceX++)
 		{
 			for (size_t pieceY = 0; pieceY < 4; pieceY++)
@@ -102,9 +161,36 @@ int main()
 			}
 		}
 
-		// Display frame
+		// Draw score
+		swprintf_s(&screen[2 * ScreenWidth + FieldWidth + 6], 16, L"Score: %8d", score);
+
+		// Draw finish lines
+		if (!lines.empty())
+		{
+			// Display frame
+			WriteConsoleOutputCharacter(consoleHandle, screen, screenBufferSize, { 0, 0 }, &bytesWritten);
+			this_thread::sleep_for(400ms);
+
+			for (auto& line : lines)
+			{
+				for (size_t pieceX = 1; pieceX < FieldWidth - 1; pieceX++)
+				{
+					for (size_t pieceY = line; pieceY > 0; pieceY--)
+						Field[pieceY * FieldWidth + pieceX] = Field[(pieceY - 1) * FieldWidth + pieceX];
+
+					Field[pieceX] = 0;
+				}
+			}
+
+			lines.clear();
+		}
+
 		WriteConsoleOutputCharacter(consoleHandle, screen, screenBufferSize, { 0, 0 }, &bytesWritten);
 	}
+
+	CloseHandle(consoleHandle);
+
+	cout << "Game over!! :(, your score: " << score << endl;
 
 	return 0;
 }
@@ -137,7 +223,6 @@ bool DoesPieceIft(int pieceId, int rotation, int posX, int posY)
 					}
 				}
 			}
-
 		}
 
 	return true;
